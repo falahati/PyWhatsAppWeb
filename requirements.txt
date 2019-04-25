@@ -1,3 +1,0 @@
-PyAutoIt==0.4
-schedule==0.5.0
-selenium==3.13.0
