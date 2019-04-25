@@ -7,7 +7,7 @@
 [![](https://img.shields.io/github/issues/falahati/PyWhatsAppWeb.svg?style=flat-square)](https://github.com/falahati/PyWhatsAppWeb/issues)
 
 **PyWhatsAppWeb** is a fork from the [@shauryauppal](https://github.com/shauryauppal)'s similar project named [PyWhatsapp](https://github.com/shauryauppal/PyWhatsapp)
-that allows users to automate the process of sending WhatsApp messages. The goal of this fork was to increase the stability of the script
+that allows users to automate the process of sending WhatsApp messages. The goal of this fork is to increase the stability of the script
 and allows sending hundreds if not thousands of messages or files to users.
 
 This project provides the following features:
@@ -20,7 +20,7 @@ This project provides the following features:
 5. Sending text messages
 8. Keeping logged-in status after restarts
 
-And includes an example which sends the file located in the *'Work'* folder. Read more bellow.
+And includes an example which sends the files located in the *'Work'* folder. Read more below.
 
 ## WHERE TO DOWNLOAD
 
@@ -46,11 +46,12 @@ You can always donate your time by contributing to the project or by introducing
 8. Execute `python PyWhatsAppWeb.py`
 
 #### Notes
-* File names must contain the full phone number of the person you want to send the message to, containing the country and area code without the leading zeros or the plus sign (Example: *'98XXXXXXXXXX.jpg'*) or the name of the contact in your contact list (Example: *'John.pdf'*)
-* Image and video files will be sent as media attachments; text files as messages and other types of files as file attachments
+* File names must contain the full phone number of the person you want to send the message to, containing the country and area code without the leading zeros or the plus sign (Example: *'98XXXXXXXXXX.jpg'*) or the name of the contact in your contact list (Example: *'John.pdf'*).
+* Image and video files will be sent as media attachments; text files as messages and other types of files as file attachments.
 * If the phone number is invalid or the contact doesn't exist; the file will be moved to the *'Work\Invalid'* folder; otherwise it will be moved to the *'Work\Sent'* folder. If it fails to send the message for any other reason the file will remains in place.
 * The code only exits if there is no file directly in the *'Work'* folder anymore.
-* Attachments are only available when executed under Windows; this is due to using **AutoIt** for selecting the attachment file
+* Attachments are only available when executed under Windows; this is due to using **AutoIt** for selecting the attachment file.
+* To close the program you need to press `CTRL`+`C` two times; last one being in the "Waming-Up..." stage as the code runs in a loop.
 
 ## LICENSE
 Copyright (C) 2019 Soroush Falahati

@@ -769,6 +769,8 @@ if __name__ == "__main__":
         os.makedirs(resolveFolderPath(SentFolder))
 
     while (True):
+        writeConsole("Warming-up...", True, True)
+        time.sleep(5)
         try:
             if (driverOpen() == False):
                 raise Exception('Needs restart.')
@@ -780,6 +782,7 @@ if __name__ == "__main__":
 
             driverClose()
             break
-        except:
+        except Exception as e:
+            writeConsole(e.message, True, True)
             driverClose()
             continue
