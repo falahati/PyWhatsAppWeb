@@ -1,287 +1,770 @@
-import schedule
+from __future__ import print_function
 from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.action_chains import ActionChains
 try:
     import autoit
 except:
     pass
 import time
-import datetime
 import os
+import sys
 
-browser = None
-Contact = None
-message = None
-Link = "https://web.whatsapp.com/"
-wait = None
-choice = None
-docChoice = None
-doc_filename = None
-unsaved_Contacts = None
+Driver = None
 
-def input_contacts():
-    global Contact,unsaved_Contacts
-    # List of Contacts
-    Contact = []
-    unsaved_Contacts = []
-    while True:
-        # Enter your choice 1 or 2
-        print("PLEASE CHOOSE ONE OF THE OPTIONS:\n")
-        print("1.Message to Saved Contact number")
-        print("2.Message to Unsaved Contact number\n")
-        x = int(input("Enter your choice(1 or 2):\n"))
-        print()
-        if x == 1:
-            n = int(input('Enter number of Contacts to add(count)->'))
-            print()
-            for i in range(0,n):
-                inp = str(input("Enter contact name(text)->"))
-                inp = '"' + inp + '"'
-                # print (inp)
-                Contact.append(inp)
-        elif x == 2:
-            n = int(input('Enter number of unsaved Contacts to add(count)->'))
-            print()
-            for i in range(0,n):
-                # Example use: 919899123456, Don't use: +919899123456
-                # Reference : https://faq.whatsapp.com/en/android/26000030/
-                inp = str(input("Enter unsaved contact number with country code(interger):\n\nValid input: 91943xxxxx12\nInvalid input: +91943xxxxx12\n\n"))
-                # print (inp)
-                unsaved_Contacts.append(inp)
+WhatsAppWebLink = "https://web.whatsapp.com/"
+WhatsAppContactLink = "https://wa.me/"
 
-        choi = input("Do you want to add more contacts(y/n)->")
-        if choi == "n":
-            break
 
-    if len(Contact) != 0:
-        print("\nSaved contacts entered list->",Contact)
-    if len(unsaved_Contacts) != 0:
-        print("Unsaved numbers entered list->",unsaved_Contacts)
-    input("\nPress ENTER to continue...")
 
-def input_message():
-    global message
-    # Enter your Good Morning Msg
-    print()
-    print("Enter the message and use the symbol '~' to end the message:\nFor example: Hi, this is a test message~\n\nYour message: ")
-    message = []
-    temp = ""
-    done = False
+# ---------------------------------------------------------------------
+# Configs
 
-    while not done:
-      temp = input()
-      if len(temp)!=0 and temp[-1] == "~":
-        done = True
-        message.append(temp[:-1])
-      else:
-        message.append(temp)
-    message = "\n".join(message)
-    print()
-    print(message)
+WorkFolder = "Work"
+SentFolder = "Work" + os.sep + "Sent"
+InvalidFolder = "Work" + os.sep + "Invalid"
+ChromeUserDataFolder = "ChromeProfile"
 
-def whatsapp_login():
-    global wait,browser,Link
-    browser = webdriver.Chrome()
-    wait = WebDriverWait(browser, 600)
-    browser.get(Link)
-    browser.maximize_window()
-    print("QR scanned")
 
-def send_message(target):
-    global message,wait, browser
+
+# ---------------------------------------------------------------------
+# General Methods
+
+def moveFile(fileName, targetFolder):
     try:
-        x_arg = '//span[contains(@title,' + target + ')]'
-        group_title = wait.until(EC.presence_of_element_located((By.XPATH, x_arg)))
-        group_title.click()
-        input_box = browser.find_element_by_xpath('//*[@id="main"]/footer/div[1]/div[2]/div/div[2]')
-        for ch in message:
-            if ch == "\n":
-                ActionChains(browser).key_down(Keys.SHIFT).key_down(Keys.ENTER).key_up(Keys.ENTER).key_up(Keys.SHIFT).key_up(Keys.BACKSPACE).perform()
-            else:
-                input_box.send_keys(ch)
-        input_box.send_keys(Keys.ENTER)
-        print("Message sent successfuly")
+        srcAddress = resolveFilePath(fileName, WorkFolder)
+        dstAddress = resolveFilePath(fileName, targetFolder)
+        os.rename(srcAddress, dstAddress)
+        return True
+    except:
+        return False
+
+
+def resolveFilePath(fileName, targetFolder):
+    return os.path.join(resolveFolderPath(targetFolder), fileName)
+
+def resolveFolderPath(targetFolder):
+    return os.path.join(os.getcwd(), targetFolder)
+
+
+def writeConsole(message, clearBehind = False, clearAfter = True, spaced = False):
+    if (clearBehind):
+        print("\r\n", end="")
+    if (spaced):
+        print(message, end=" ")
+    else:
+        print(message, end="")
+    if (clearAfter):
+        print("\r\n", end="")
+
+def readFileEntireText(fileName):
+    with open(resolveFilePath(fileName, WorkFolder), 'r') as f:
+        return f.read()
+
+def isFileMessage(fileName):
+    fileName = fileName.lower().strip()
+    return (
+        fileName.endswith('.txt')
+    )
+
+def isFileMedia(fileName):
+    fileName = fileName.lower().strip()
+    return (
+        fileName.endswith('.dib') or fileName.endswith('.webp') or fileName.endswith('.svgz') or fileName.endswith('.gif') or fileName.endswith('.ico') or
+        fileName.endswith('.jpeg') or fileName.endswith('.jpg') or fileName.endswith('.jpe') or fileName.endswith('.pict') or fileName.endswith('.png') or
+        fileName.endswith('.svg') or fileName.endswith('.tif') or fileName.endswith('.xbm') or fileName.endswith('.bmp') or fileName.endswith('.jfif') or
+        fileName.endswith('.pjpeg') or fileName.endswith('.pjp') or fileName.endswith('.tiff') or fileName.endswith('.mp4') or fileName.endswith('.m4v') or
+        fileName.endswith('.3gpp') or fileName.endswith('.mov')
+    )
+
+def isPhoneNumber(s):
+    try:
+        float(s)
+    except ValueError:
+        return False
+    return True
+
+
+
+
+# ---------------------------------------------------------------------
+# Driver Methods
+
+def driverOpen():
+    global Driver
+    writeConsole("Opening browser ...")
+    try:
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("user-data-dir=" + ChromeUserDataFolder) 
+        Driver = webdriver.Chrome(chrome_options=chrome_options)
         time.sleep(1)
-    except NoSuchElementException:
-        return
+        Driver.maximize_window()
+        writeConsole("Browser opened.")
+        return True
+    except:        
+        try:
+            Driver.quit()
+        except:
+            pass
 
-def send_unsaved_contact_message():
-    global message
+        writeConsole("Failed to open browser.")
+        return False
+
+
+def driverNavigate(link, mindAlerts = False, alertTimeout = 120):
     try:
-        time.sleep(7)
-        input_box = browser.find_element_by_xpath('//*[@id="main"]/footer/div[1]/div[2]/div/div[2]')
-        for ch in message:
-            if ch == "\n":
-                ActionChains(browser).key_down(Keys.SHIFT).key_down(Keys.ENTER).key_up(Keys.ENTER).key_up(Keys.SHIFT).key_up(Keys.BACKSPACE).perform()
-            else:
-                input_box.send_keys(ch)
-        input_box.send_keys(Keys.ENTER)
-        print("Message sent successfuly")
+        writeConsole("Navigating to '" + link + "' ...")
+        Driver.get(link)
+        i = 0
+        while (True):
+            try:
+                i += 1
+                time.sleep(1)
+                if (mindAlerts and i < alertTimeout):
+                    Driver.switch_to.alert.dismiss()
+                    writeConsole(str(i), False, False, True)
+                    time.sleep(1)
+                    Driver.get(link)
+                else:
+                    Driver.switch_to.alert.accept()
+                    if (mindAlerts):
+                        writeConsole("Timed-out", False, True, False)
+                    time.sleep(1)
+                    break
+            except:
+                break
+        return True
+    except:
+        return False
+
+
+def driverClose():
+    try:
+        Driver.quit()
+    except:
+        pass
+    time.sleep(2)
+
+
+
+
+# ---------------------------------------------------------------------
+# DOM Methods
+
+def domDoesElementExists(xpathQuery):
+    try:
+        dummy = Driver.find_element_by_xpath(xpathQuery)
+        return True
     except NoSuchElementException:
-        print("Failed to send message")
-        return
-
-def send_attachment():
-    # Attachment Drop Down Menu
-    clipButton = browser.find_element_by_xpath('//*[@id="main"]/header/div[3]/div/div[2]/div/span')
-    clipButton.click()
-    time.sleep(1)
-
-    # To send Videos and Images.
-    mediaButton = browser.find_element_by_xpath('//*[@id="main"]/header/div[3]/div/div[2]/span/div/div/ul/li[1]/button')
-    mediaButton.click()
-    time.sleep(3)
-
-    hour = datetime.datetime.now().hour
-
-    # After 5am and before 11am scheduled this.
-    if(hour >=5 and hour <=11):
-        image_path = os.getcwd() +"\\Media\\" + 'goodmorning.jpg'
-    # After 9pm and before 11pm schedule this
-    elif (hour>=21 and hour<=23):
-        image_path = os.getcwd() +"\\Media\\" + 'goodnight.jpg'
-    else: # At any other time schedule this.
-        image_path = os.getcwd() +"\\Media\\" + 'howareyou.jpg'
-    # print(image_path)
-
-    autoit.control_focus("Open","Edit1")
-    autoit.control_set_text("Open","Edit1",(image_path) )
-    autoit.control_click("Open","Button1")
-
-    time.sleep(3)
-    whatsapp_send_button = browser.find_element_by_xpath('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/span[2]/div/div/span')
-    whatsapp_send_button.click()
-
-#Function to send Documents(PDF, Word file, PPT, etc.)
-def send_files():
-    global doc_filename
-    # Attachment Drop Down Menu
-    clipButton = browser.find_element_by_xpath('//*[@id="main"]/header/div[3]/div/div[2]/div/span')
-    clipButton.click()
-    time.sleep(1)
-
-    # To send a Document(PDF, Word file, PPT)
-    docButton = browser.find_element_by_xpath('//*[@id="main"]/header/div[3]/div/div[2]/span/div/div/ul/li[3]/button')
-    docButton.click()
-    time.sleep(1)
-
-    docPath = os.getcwd() + "\\Documents\\" + doc_filename
-
-    autoit.control_focus("Open","Edit1")
-    autoit.control_set_text("Open","Edit1",(docPath) )
-    autoit.control_click("Open","Button1")
-
-    time.sleep(3)
-    whatsapp_send_button = browser.find_element_by_xpath('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/span[2]/div/div/span')
-    whatsapp_send_button.click()
+        return False
 
 
-def sender():
-    global Contact,choice, docChoice, unsaved_Contacts
-    for i in Contact:
-        send_message(i)
-        print("Message sent to ",i)
-        if(choice=="yes"):
-            try:
-                send_attachment()
-            except:
-                print('Attachment not sent.')
-        if(docChoice == "yes"):
-            try:
-                send_files()
-            except:
-                print('Files not sent')
-    time.sleep(5)
-    if len(unsaved_Contacts)>0:
-        for i in unsaved_Contacts:
-            link = "https://wa.me/"+i
-            #driver  = webdriver.Chrome()
-            browser.get(link)
+def domWaitForElementPresence(xpathQuery, timeout = 60, condition = True):
+    i = 0    
+    while (True):
+        if (domDoesElementExists(xpathQuery) == condition):
+            writeConsole("", False, True, False)
+            return True
+        else:
+            i += 1
+            writeConsole(str(i), False, False, True)
+            if (i >= timeout):
+                writeConsole("Timed-out", False, True, False)
+                return False
             time.sleep(1)
-            browser.find_element_by_xpath('//*[@id="action-button"]').click()
-            time.sleep(4)
-            print("Sending message to", i)
-            send_unsaved_contact_message()
-            if(choice=="yes"):
-                try:
-                    send_attachment()
-                except:
-                    print('Attachment not sent.')
-            if(docChoice == "yes"):
-                try:
-                    send_files()
-                except:
-                    print('Files not sent')
-            time.sleep(7)
-
-# For GoodMorning Image and Message
-schedule.every().day.at("07:00").do( sender )
-# For How are you message
-schedule.every().day.at("13:35").do( sender )
-# For GoodNight Image and Message
-schedule.every().day.at("22:00").do( sender )
-
-# Example Schedule for a particular day of week Monday
-schedule.every().monday.at("08:00").do(sender)
 
 
-# To schedule your msgs
-def scheduler():
-    while True:
-        schedule.run_pending()
+def domWaitForElementClick(xpathQuery, timeout = 60):
+    i = 0
+    while (True):
+        try:            
+            if (domDoesElementExists(xpathQuery) == True):
+                element = Driver.find_element_by_xpath(xpathQuery)
+                element.click()
+                writeConsole("", False, True, False)
+                return True
+        except:
+            pass
+        i += 1
+        writeConsole(str(i), False, False, True)
+        if (i >= timeout):
+            writeConsole("Timed-out", False, True, False)
+            return False
         time.sleep(1)
+
+
+def domScrollElement(element, scrollTo = False):
+    try:
+        height = Driver.execute_script("return arguments[0].clientHeight", element)
+        totalHeight = Driver.execute_script("return arguments[0].scrollHeight", element)
+        if (scrollTo is False):            
+            scrollPosition = Driver.execute_script("return arguments[0].scrollTop", element)
+            if (scrollPosition + int(height) >= int(totalHeight) - 30):
+                return False
+            Driver.execute_script("arguments[0].scrollTo(0, arguments[1])", element, scrollPosition + (int(height) - 30))
+            time.sleep(1)
+            return True
+        else:
+            Driver.execute_script("arguments[0].scrollTo(0, arguments[1])", element, scrollTo)
+            time.sleep(1)
+            return True
+    except:
+        return False
+
+
+
+
+# ---------------------------------------------------------------------
+# WhatsApp Methods
+
+def whatsAppLogin(timeout = 120):
+    writeConsole("Logging-In ...")
+    if (driverNavigate(WhatsAppWebLink) == False):
+        writeConsole("Login failed.")
+        return False
+
+    waitingForQRScan = False
+    i = 0
+    while(domDoesElementExists('//*[@id="side"]') == False):        
+        i += 1
+        if (domDoesElementExists('//div[@class="landing-main"]')):
+            i = 0
+            if (not(waitingForQRScan)):
+                waitingForQRScan = True
+                writeConsole("Waiting for QR scan.")
+        else:
+            waitingForQRScan = False            
+            writeConsole(str(i), False, False, True)
+
+        if (i >= timeout):
+            writeConsole("Login failed.")
+            return False
+        time.sleep(1)
+        
+    writeConsole("Logged-In.")
+    return True
+
+
+def whatsAppSearchChats(contactName):
+    if (domWaitForElementPresence('//*[@id="side"]/div[1]//input[@type="text"]') == False):
+        writeConsole("Failed to search for contact.")
+        return False
+
+    try:
+        input_box = Driver.find_element_by_xpath('//*[@id="side"]/div[1]//input[@type="text"]')
+
+        for ch in contactName:
+            input_box.send_keys(ch)
+
+        time.sleep(2)
+
+        domWaitForElementPresence('//*[@id="side"]/div[1]//span[@data-icon="x-alt"]', 10)
+        result = whatsAppGetRecentChats()
+
+        time.sleep(1)
+        input_box.send_keys(Keys.ENTER)
+
+        return result
+    except:
+        return False
+
+def whatsAppSearchContacts(contactName):
+    if (domWaitForElementClick('//*[@id="side"]//div[@role="button" and @title="New chat"]') == False):
+        return False
+
+    if (domWaitForElementPresence('//*[@id="app"]//input[@type="text" and @title="Search contacts"]') == False):
+        writeConsole("Failed to search for contact.")
+        return False
+    try:
+        input_box = Driver.find_element_by_xpath('//*[@id="app"]//input[@type="text" and @title="Search contacts"]')
+
+        for ch in contactName:
+            input_box.send_keys(ch)
+        
+        time.sleep(1)
+        contacts = []
+        try:
+            xPath = '//div[@id="app"]/div/div/div[2]/div[1]/span/div/span/div/div[2]/div/div/div/div/div/div/div[2]/div[1]//span[@title and not(@title="")]'
+            pane = Driver.find_element_by_xpath('//div[@id="app"]/div/div/div[2]/div[1]/span/div/span/div/div[2]')
+            scrollResult = True
+            while (scrollResult):
+                while (True):
+                    try:
+                        if (domWaitForElementPresence(xPath, 10) == False):
+                            break
+                        c = Driver.find_elements_by_xpath(xPath)
+                        contacts = sorted(contacts + sorted([element.get_attribute('title') for element in c]))
+                        break
+                    except StaleElementReferenceException:
+                        continue
+                scrollResult = domScrollElement(pane)
+            domScrollElement(pane, 0)
+        except:
+            pass
+
+        time.sleep(1)
+        Driver.find_element_by_xpath('//html').send_keys(Keys.ESCAPE)
+        time.sleep(1)
+        Driver.find_element_by_xpath('//html').send_keys(Keys.ESCAPE)
+        time.sleep(1)
+
+        return list(set(contacts))
+    except:
+        return False
+
+        
+def whatsAppSelectContact(contactName):
+    if (domWaitForElementClick('//*[@id="side"]//div[@role="button" and @title="New chat"]') == False):
+        return False
+
+    if (domWaitForElementPresence('//*[@id="app"]//input[@type="text" and @title="Search contacts"]') == False):
+        writeConsole("Failed to search for contact.")
+        return False
+
+    try:
+        input_box = Driver.find_element_by_xpath('//*[@id="app"]//input[@type="text" and @title="Search contacts"]')
+
+        for ch in contactName:
+            input_box.send_keys(ch)
+        
+        time.sleep(1)
+
+        xPath = '//div[@id="app"]/div/div/div[2]/div[1]/span/div/span/div/div[2]/div/div/div/div/div/div/div[2]/div[1]//span[@title and not(@title="")]'
+        if (domWaitForElementPresence(xPath, 10)):
+            input_box.send_keys(Keys.ENTER)
+            return True
+
+        time.sleep(1)
+        Driver.find_element_by_xpath('//html').send_keys(Keys.ESCAPE)
+        time.sleep(1)
+        Driver.find_element_by_xpath('//html').send_keys(Keys.ESCAPE)
+        time.sleep(1)
+
+        return False
+    except:
+        return False
+
+
+def whatsAppGetContacts():
+    if (domWaitForElementClick('//*[@id="side"]//div[@role="button" and @title="New chat"]') == False):
+        return False
+
+    try:
+        time.sleep(1)
+        contacts = []
+        try:
+            xPath = '//div[@id="app"]/div/div/div[2]/div[1]/span/div/span/div/div[2]/div/div/div/div/div/div/div[2]/div[1]//span[@title and not(@title="")]'
+            pane = Driver.find_element_by_xpath('//div[@id="app"]/div/div/div[2]/div[1]/span/div/span/div/div[2]')
+            scrollResult = True
+            while (scrollResult):
+                while (True):
+                    try:
+                        if (domWaitForElementPresence(xPath, 10) == False):
+                            break
+                        c = Driver.find_elements_by_xpath(xPath)
+                        contacts = sorted(contacts + sorted([element.get_attribute('title') for element in c]))
+                        break
+                    except StaleElementReferenceException:
+                        continue
+                scrollResult = domScrollElement(pane)
+            domScrollElement(pane, 0)
+        except:
+            pass
+
+        time.sleep(1)
+        Driver.find_element_by_xpath('//html').send_keys(Keys.ESCAPE)
+        time.sleep(1)
+
+        return list(set(contacts))
+    except:
+        return False
+
+
+def whatsAppSelectChat(contactName):
+    if (domWaitForElementPresence('//*[@id="side"]/div[1]//input[@type="text"]') == False):
+        writeConsole("Failed to search for contact.")
+        return False
+
+    try:
+        input_box = Driver.find_element_by_xpath('//*[@id="side"]/div[1]//input[@type="text"]')
+
+        for ch in contactName:
+            input_box.send_keys(ch)
+
+        time.sleep(2)
+
+        domWaitForElementPresence('//*[@id="side"]/div[1]//span[@data-icon="x-alt"]', 10)
+        success = whatsAppSelectRecentChat(contactName)
+
+        time.sleep(1)
+        input_box.send_keys(Keys.ENTER)
+
+        return success
+    except:
+        return False
+
+
+def whatsAppSelectRecentChat(contactName):
+    try:
+        pane = Driver.find_element_by_xpath('//div[@id="pane-side"]')
+        scrollResult = True
+        while (scrollResult):
+            if (domWaitForElementClick('//div[@id="pane-side"]//span[@title="' + contactName + '"]', 1)):
+                scrollResult = domScrollElement(pane, 0)
+                return True
+            scrollResult = domScrollElement(pane)
+        scrollResult = domScrollElement(pane, 0)
+        return False
+    except:
+        return False
+
+
+def whatsAppGetRecentChats():
+    xPath = '//div[@id="pane-side"]/div[1]/div[1]/div[1]/div/div[1]/div[1]/div[2]/div[1]//span[@title and not(@title="")]'
+    contacts = []
+    try:
+        pane = Driver.find_element_by_xpath('//div[@id="pane-side"]')
+        scrollResult = True
+        while (scrollResult):
+            while (True):
+                try:
+                    if (domWaitForElementPresence(xPath, 10) == False):
+                        return False
+                    c = Driver.find_elements_by_xpath(xPath)
+                    contacts = sorted(sorted(contacts) + sorted([element.get_attribute('title') for element in c]))
+                    break
+                except StaleElementReferenceException:
+                    continue
+                except:
+                    return False
+            scrollResult = domScrollElement(pane)
+        scrollResult = domScrollElement(pane, 0)
+        return list(set(contacts))
+    except:
+        return False
+
+
+def whatsAppOpenContact(phoneNumber, alertTimeout = 120, redirectTimeout = 45):
+    try:
+        writeConsole("Opening contact page ...")
+        link = WhatsAppContactLink + phoneNumber
+        if (driverNavigate(link, True, alertTimeout) == False):
+            writeConsole("Failed to open contact page.")
+            return False, False
+        
+        time.sleep(1)
+
+        if (domWaitForElementClick('//*[@id="action-button"]') == False):
+            writeConsole("Failed to redirect from contact page.")
+            return False, False
+
+        time.sleep(1)
+
+        i = 0
+        while True:
+            if (domDoesElementExists('//*[@id="main"]/footer/div[1]/div[2]/div/div[2]')):
+                return True, False
+            else:
+                i += 1
+
+                if (domDoesElementExists('//div[text()=\'Phone number shared via url is invalid.\']')):
+                    writeConsole("Contact is invalid.")
+                    return False, True
+
+                writeConsole(str(i), False, False, True)
+
+                if (i >= redirectTimeout):
+                    writeConsole("Timed-out", False, True, False)
+                    return False, False
+
+                time.sleep(1)
+    except:
+        writeConsole("Failed to open contact page.")
+        return False, False
+
+
+def whatsAppIsConnected():
+    return  (
+        domDoesElementExists('//*[@id="side"]//*[text()=\'Connecting\']') == False and 
+        domDoesElementExists('//*[@id="side"]//*[text()=\'Phone not connected\']') == False and 
+        domDoesElementExists('//*[@id="side"]//*[text()=\'Connecting to WhatsApp\']') == False and 
+        domDoesElementExists('//*[@id="startup"]') == False and
+        domDoesElementExists('//*[text()=\'Trying to reach phone\']') == False
+    )
+
+
+def whatsAppWaitForConnection(timeout = 240, success = 3):
+    i = 0
+    s = 0
+    while (True):
+        if (whatsAppIsConnected()):
+            i -= 1
+            s += 1
+            if (s >= success):
+                return True
+        else:
+            i += 1
+            s = 0
+            writeConsole(str(i), False, False, True)
+            if (i >= timeout):
+                writeConsole("Timed-out", False, True, False)
+                return False
+        time.sleep(1)
+
+
+def whatsAppWaitForDelivery(timeout = 240, success = 3):
+    i = 0
+    s = 0
+    while (True):
+        if (
+            domDoesElementExists('//*[@id="main"]//span[@data-icon="media-cancel"]') == False and 
+            domDoesElementExists('//*[@id="main"]//span[@data-icon="audio-cancel-noborder"]') == False and 
+            domDoesElementExists('//*[@id="main"]//span[@data-icon="msg-time"]') == False and 
+            whatsAppIsConnected()
+            ):
+            i -= 1
+            s += 1
+            if (s >= success):
+                return True
+        else:
+            i += 1
+            s = 0
+            writeConsole(str(i), False, False, True)
+            if (i >= timeout):
+                writeConsole("Timed-out", False, True, False)
+                writeConsole("Failed to attach media.")
+                return False
+        time.sleep(1)
+
+
+def whatsAppSendMessage(message):
+    writeConsole("Sending message ...")
+
+    if (domWaitForElementPresence('//*[@id="main"]/footer/div[1]/div[2]/div/div[2]') == False):
+        writeConsole("Failed to send message.")
+        return False
+
+    try:
+        input_box = Driver.find_element_by_xpath('//*[@id="main"]/footer/div[1]/div[2]/div/div[2]')
+
+        for ch in message:
+            if ch == "\n":
+                ActionChains(Driver).key_down(Keys.SHIFT).key_down(Keys.ENTER).key_up(Keys.ENTER).key_up(Keys.SHIFT).key_up(Keys.BACKSPACE).perform()
+            else:
+                input_box.send_keys(ch)
+
+        input_box.send_keys(Keys.ENTER)
+
+        # Waiting for delivery
+        writeConsole("Waiting for delivery ...")
+        if (whatsAppWaitForDelivery() == False):
+            writeConsole("Failed to send message.")
+            return False
+
+        writeConsole("Sent.")
+        return True
+    except:
+        writeConsole("Failed to send message.")
+        return False
+
+
+def whatsAppSendMedia(fileName, caption = False):
+    try:
+        # Attachment drop down menu.
+        writeConsole("Attaching ...")
+        if (domWaitForElementClick('//*[@id="main"]/header/div[3]/div/div[2]/div/span') == False):
+            writeConsole("Failed to attach media.")
+            return False
+
+        time.sleep(1)
+        
+        # Attach videos and images.
+        writeConsole("Attaching media ...")
+        if (domWaitForElementClick('//*[@id="main"]/header/div[3]/div/div[2]/span/div/div/ul/li[1]/button') == False):
+            writeConsole("Failed to attach media.")
+            return False
+
+        time.sleep(1)
+
+        # Selecting file
+        image_path = resolveFilePath(fileName, WorkFolder)
+        autoit.control_focus("Open", "Edit1")
+        autoit.control_set_text("Open", "Edit1", (image_path))
+        autoit.control_click("Open", "Button1")
+
+        time.sleep(2)
+
+        # Type caption
+        if (caption):
+            writeConsole("Adding message ...")
+            if (domWaitForElementPresence('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/div/span/div/div[2]/div/div[3]/div[1]/div[2]') == False):
+                writeConsole("Failed to attach media.")
+                return False
+
+            input_box = Driver.find_element_by_xpath('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/div/span/div/div[2]/div/div[3]/div[1]/div[2]')
+
+            for ch in caption:
+                if ch == "\n":
+                    ActionChains(Driver).key_down(Keys.SHIFT).key_down(Keys.ENTER).key_up(Keys.ENTER).key_up(Keys.SHIFT).key_up(Keys.BACKSPACE).perform()
+                else:
+                    input_box.send_keys(ch)
+                    
+            time.sleep(1)
+
+        # Clicking send
+        writeConsole("Sending ...")
+        if (domWaitForElementClick('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/span[2]/div/div/span') == False):
+            writeConsole("Failed to attach media.")
+            return False
+        
+        time.sleep(2)
+
+        # Waiting for upload
+        writeConsole("Waiting for upload ...")
+        if (whatsAppWaitForDelivery() == False):
+            writeConsole("Failed to attach media.")
+            return False
+    
+        writeConsole("Sent.")
+        return True
+    except:
+        writeConsole("Failed to attach media.")
+        return False
+
+
+def whatsAppSendFile(fileName):
+    try:
+        # Attachment drop down menu.
+        writeConsole("Attaching ...")
+        if (domWaitForElementClick('//*[@id="main"]/header/div[3]/div/div[2]/div/span') == False):
+            writeConsole("Failed to attach file.")
+            return False
+
+        time.sleep(1)
+        
+        # Attach file and document.
+        writeConsole("Attaching file ...")
+        if (domWaitForElementClick('//*[@id="main"]/header/div[3]/div/div[2]/span/div/div/ul/li[3]/button') == False):
+            writeConsole("Failed to attach file.")
+            return False
+
+        time.sleep(1)
+
+        # Selecting file
+        image_path = resolveFilePath(fileName, WorkFolder)
+        autoit.control_focus("Open", "Edit1")
+        autoit.control_set_text("Open", "Edit1", (image_path))
+        autoit.control_click("Open", "Button1")
+
+        time.sleep(2)
+
+        # Clicking send
+        writeConsole("Sending ...")
+        if (domWaitForElementClick('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/span[2]/div/div/span') == False):
+            writeConsole("Failed to attach file.")
+            return False
+        
+        time.sleep(2)
+
+        # Waiting for upload
+        writeConsole("Waiting for upload ...")
+        if (whatsAppWaitForDelivery() == False):
+            writeConsole("Failed to attach file.")
+            return False
+    
+        writeConsole("Sent.")
+        return True
+    except:
+        writeConsole("Failed to attach file.")
+        return False
+
+def whatsAppGetCurrentChatName():
+    if (domWaitForElementPresence('//*[@id="main"]/header/div[2]//span[@title and not(@title="")]', 10) == False):
+        return False
+
+    try:
+        element = Driver.find_element_by_xpath('//*[@id="main"]/header/div[2]//span[@title and not(@title="")]')
+        return element.get_attribute('title')
+    except:
+        return False
+
+
+# ---------------------------------------------------------------------
+# Main Logic
+
+def send_medias_files_messages_to_contacts_example(folder, mediaCaption = False):
+    shouldRedo = True
+    lastContact = False
+    while (shouldRedo):
+        shouldRedo = False
+        for fileName in os.listdir(resolveFolderPath(folder)):
+            if (os.path.isfile(resolveFilePath(fileName, folder)) == False):
+                continue
+            
+            contact = os.path.splitext(fileName)[0]
+
+            if (not(lastContact == contact)):
+                lastContact = False
+                if (isPhoneNumber(contact)):
+                    success, badnumber = whatsAppOpenContact(contact)
+                    if (not(success)):
+                        if (badnumber):
+                            moveFile(fileName, InvalidFolder)
+                        else:
+                            shouldRedo = True
+                        continue
+                else:
+                    success = whatsAppSelectContact(contact)
+                    if (not(success)):
+                        moveFile(fileName, InvalidFolder)                        
+                    continue
+
+            time.sleep(1)
+
+            if (isFileMessage(fileName)):
+                content = readFileEntireText(fileName)
+                success = whatsAppSendMessage(content)
+            elif (isFileMedia(fileName)):
+                success = whatsAppSendMedia(fileName, mediaCaption)
+            else:
+                success = whatsAppSendFile(fileName)
+
+            if (not(success)):
+                shouldRedo = True
+                continue
+
+            lastContact = contact
+            moveFile(fileName, SentFolder)    
+
 
 if __name__ == "__main__":
+    if (not(os.path.exists(resolveFolderPath(WorkFolder)))):
+        os.makedirs(resolveFolderPath(WorkFolder))
 
-    print("Web Page Open")
+    if (not(os.path.exists(resolveFolderPath(InvalidFolder)))):
+        os.makedirs(resolveFolderPath(InvalidFolder))
 
-    # Append more contact as input to send messages
-    input_contacts()
-    # Enter the message you want to send
-    input_message()
+    if (not(os.path.exists(resolveFolderPath(SentFolder)))):
+        os.makedirs(resolveFolderPath(SentFolder))
 
-    # If you want to schedule messages for
-    # a particular timing choose yes
-    # If no choosed instant message would be sent
-    isSchedule = input('Do you want to schedule your Message(yes/no):')
-    if(isSchedule=="yes"):
-        jobtime = input('input time in 24 hour (HH:MM) format - ')
+    while (True):
+        try:
+            if (driverOpen() == False):
+                raise Exception('Needs restart.')
 
-    #Send Attachment Media only Images/Video
-    choice = input("Would you like to send attachment(yes/no): ")
+            if (whatsAppLogin() == False):
+                raise Exception('Needs restart.')
 
-    docChoice = input("Would you file to send a Document file(yes/no): ")
-    if(docChoice == "yes"):
-        # Note the document file should be present in the Document Folder
-        doc_filename = input("Enter the Document file name you want to send: ")
+            send_medias_files_messages_to_contacts_example(WorkFolder, False)
 
-    # Let us login and Scan
-    print("SCAN YOUR QR CODE FOR WHATSAPP WEB")
-    whatsapp_login()
+            driverClose()
+            break
+        except:
+            driverClose()
+            continue
 
-    # Send message to all Contact List
-    # This sender is just for testing purpose to check script working or not.
-    # Scheduling works below.
-    # sender()
-    # Uncomment line 236 is case you want to test the program
-
-    if(isSchedule=="yes"):
-        schedule.every().day.at(jobtime).do(sender)
-    else:
-        sender()
-
-    # First time message sending Task Complete
-    print("Task Completed")
-
-    # Messages are scheduled to send
-    # Default schedule to send attachment and greet the personal
-    # For GoodMorning, GoodNight and howareyou wishes
-    # Comment in case you don't want to send wishes or schedule
-    scheduler()
-
-    # browser.quit()
+            
