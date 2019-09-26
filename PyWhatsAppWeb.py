@@ -477,6 +477,9 @@ def whatsAppOpenContact(phoneNumber, alertTimeout=120, redirectTimeout=45):
 
         i = 0
         while True:
+            if (domDoesElementExists('//a[@class="action__link"][text()=\'use WhatsApp Web\']')):
+                domWaitForElementClick('//a[@class="action__link"][text()=\'use WhatsApp Web\']', 3)
+                time.sleep(1)
             if (domDoesElementExists('//*[@id="main"]/footer/div[1]/div[2]/div/div[2]')):
                 return True, False
             else:
