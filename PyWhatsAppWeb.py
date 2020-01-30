@@ -635,7 +635,7 @@ def whatsAppSendMedia(fileName, caption=False):
 
         # Clicking send
         writeConsole("Sending ...")
-        if (domWaitForElementClick('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/span[2]/div/div/span') == False):
+        if (domWaitForElementClick('//*[@id="app"]/div/div/div[2]/div[2]/span/div/span/div/div/div[2]/span/div/div/span') == False):
             writeConsole("Failed to attach media.")
             return False
 
